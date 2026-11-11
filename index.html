@@ -1,0 +1,758 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reto del Entrenador · Conversaciones Cruciales</title>
+<style>
+  :root{
+    --bg:#05010f; --cyan:#22f5ff; --mag:#ff2bd6; --yel:#ffe94a; --grn:#39ff14; --red:#ff3366;
+    --ink:#e9f6ff; --dim:#8fa3c7; --panel:rgba(10,6,32,.92);
+    --mono:Consolas,"Lucida Console","Courier New",monospace;
+    --sans:"Segoe UI",system-ui,-apple-system,Roboto,Arial,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--ink);font-family:var(--sans)}
+  #stage{position:fixed;inset:0;will-change:transform}
+  canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+  #game{touch-action:none;cursor:crosshair}
+  #fx{position:fixed;inset:0;pointer-events:none;z-index:50}
+
+  /* HUD */
+  #hud{position:absolute;left:0;right:0;top:0;padding:12px 16px;display:flex;gap:14px;align-items:center;
+       flex-wrap:wrap;pointer-events:none;font-family:var(--mono);z-index:5;
+       background:linear-gradient(#05010fee,#05010f00)}
+  #hud.hidden{display:none}
+  .stat{display:flex;flex-direction:column;gap:2px;min-width:86px}
+  .stat small{font-size:10px;letter-spacing:.18em;color:var(--dim)}
+  .stat b{font-size:20px;color:var(--cyan);text-shadow:0 0 10px var(--cyan)}
+  #sScore b{color:var(--yel);text-shadow:0 0 10px var(--yel)}
+  #sStreak b{color:var(--mag);text-shadow:0 0 10px var(--mag)}
+  #pips{display:flex;gap:6px;align-items:center;flex:1;min-width:180px;justify-content:center}
+  .pip{width:14px;height:14px;transform:rotate(45deg);border:1.5px solid #5b4b9a;transition:all .35s cubic-bezier(.2,1.6,.4,1)}
+  .pip.ok{background:var(--grn);border-color:var(--grn);box-shadow:0 0 12px var(--grn);transform:rotate(45deg) scale(1.15)}
+  .pip.bad{background:var(--red);border-color:var(--red);box-shadow:0 0 12px var(--red)}
+  .hbtn{pointer-events:auto;cursor:pointer;font-family:var(--mono);font-size:11px;letter-spacing:.12em;
+        color:var(--ink);padding:8px 10px;border:1px solid #6a4bd6;border-radius:6px;background:#12093099;
+        user-select:none;transition:all .15s}
+  .hbtn:hover{border-color:var(--cyan);box-shadow:0 0 12px #22f5ff88;color:var(--cyan)}
+  #hint{position:absolute;left:0;right:0;bottom:14px;text-align:center;font-family:var(--mono);font-size:12px;
+        letter-spacing:.14em;color:var(--dim);pointer-events:none;z-index:5}
+
+  /* Overlays */
+  .overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:16px;z-index:10;
+           background:radial-gradient(ellipse at center,#0a0424cc,#05010fee);
+           opacity:0;visibility:hidden;transition:opacity .3s ease,visibility .3s}
+  .overlay.show{opacity:1;visibility:visible}
+  .card{width:min(780px,100%);max-height:94vh;overflow:auto;background:var(--panel);border:1.5px solid var(--cyan);
+        border-radius:14px;padding:26px 28px;box-shadow:0 0 28px #22f5ff55,inset 0 0 40px #22f5ff10;
+        transform:translateY(26px) scale(.96);transition:transform .45s cubic-bezier(.16,1.3,.3,1)}
+  .overlay.show .card{transform:none}
+  .card::-webkit-scrollbar{width:8px}.card::-webkit-scrollbar-thumb{background:#4a3aa0;border-radius:4px}
+
+  h1{font-family:var(--mono);font-size:clamp(24px,5vw,44px);letter-spacing:.08em;line-height:1.1;color:#fff;
+     text-shadow:0 0 8px var(--mag),0 0 24px var(--mag),0 0 48px #ff2bd688;animation:flick 4s infinite}
+  h1 span{display:block;font-size:.5em;color:var(--cyan);letter-spacing:.3em;margin-top:8px;
+          text-shadow:0 0 8px var(--cyan),0 0 22px var(--cyan)}
+  @keyframes flick{0%,91%,95%,100%{opacity:1}93%{opacity:.6}}
+  .lead{margin:16px 0 14px;font-size:15.5px;line-height:1.55;color:#cfdcf5}
+  .lead b{color:var(--yel)}
+  .ctrl{display:grid;grid-template-columns:auto 1fr;gap:8px 14px;font-size:14px;margin:8px 0 18px;align-items:center}
+  .ctrl kbd{font-family:var(--mono);font-size:12px;padding:4px 8px;border:1px solid var(--mag);border-radius:5px;
+            color:var(--mag);box-shadow:0 0 8px #ff2bd655;white-space:nowrap;text-align:center}
+  .btn{display:inline-block;cursor:pointer;user-select:none;font-family:var(--mono);font-size:16px;letter-spacing:.16em;
+       padding:14px 26px;border-radius:8px;border:2px solid var(--grn);color:var(--grn);background:#39ff1412;
+       text-shadow:0 0 10px var(--grn);box-shadow:0 0 18px #39ff1455;transition:all .18s;animation:pulse 1.6s ease-in-out infinite}
+  .btn:hover{background:var(--grn);color:#031a00;text-shadow:none;transform:translateY(-2px) scale(1.03)}
+  @keyframes pulse{50%{box-shadow:0 0 34px #39ff1499}}
+  .fine{margin-top:16px;font-size:11.5px;color:#7283a8;line-height:1.45}
+
+  /* Question */
+  #qCard{border-color:var(--mag);box-shadow:0 0 28px #ff2bd655,inset 0 0 40px #ff2bd610}
+  .qtop{display:flex;justify-content:space-between;gap:10px;align-items:center;font-family:var(--mono);font-size:11.5px;letter-spacing:.14em}
+  #qTag{color:#05010f;background:var(--yel);padding:4px 10px;border-radius:4px;box-shadow:0 0 14px #ffe94a88;font-weight:bold}
+  #qNum{color:var(--dim)}
+  #tbar{height:4px;background:#241a55;border-radius:2px;margin:12px 0 14px;overflow:hidden}
+  #tfill{height:100%;width:100%;background:linear-gradient(90deg,var(--mag),var(--cyan));box-shadow:0 0 10px var(--cyan)}
+  #qTitle{font-family:var(--mono);font-size:19px;color:var(--cyan);text-shadow:0 0 10px #22f5ff99;margin-bottom:8px}
+  #qSit{font-size:15px;line-height:1.55;color:#d6e2f8}
+  #qAsk{margin:12px 0 12px;font-size:15.5px;font-weight:600;color:#fff}
+  .opt{display:flex;gap:12px;align-items:flex-start;padding:11px 14px;margin:8px 0;border:1.5px solid #3d2f86;border-radius:9px;
+       cursor:pointer;font-size:14.5px;line-height:1.45;background:#0d0730;
+       transition:transform .22s cubic-bezier(.2,1.5,.4,1),border-color .15s,box-shadow .15s,background .15s,opacity .3s}
+  .opt i{font-style:normal;font-family:var(--mono);font-size:12px;color:var(--dim);border:1px solid #4d3fa0;border-radius:4px;
+         padding:1px 6px;flex:none;margin-top:1px}
+  .opt.sel{border-color:var(--cyan);box-shadow:0 0 16px #22f5ff66;background:#0f1446;transform:translateX(8px)}
+  .opt.sel i{color:var(--cyan);border-color:var(--cyan)}
+  .locked .opt{cursor:default;transform:none}
+  .locked .opt:not(.right):not(.wrong){opacity:.38}
+  .opt.right{border-color:var(--grn);box-shadow:0 0 18px #39ff1477;background:#0a2a12}
+  .opt.right i{color:var(--grn);border-color:var(--grn)}
+  .opt.wrong{border-color:var(--red);box-shadow:0 0 18px #ff336677;background:#2c0716}
+  .opt.wrong i{color:var(--red);border-color:var(--red)}
+  #fb{display:none;margin-top:14px;padding:14px 16px;border-radius:9px;border-left:4px solid var(--grn);background:#0b1b2e;
+      animation:rise .4s cubic-bezier(.16,1.3,.3,1)}
+  #fb.bad{border-left-color:var(--red)}
+  #fb.show{display:block}
+  @keyframes rise{from{opacity:0;transform:translateY(14px)}}
+  #fbHead{font-family:var(--mono);letter-spacing:.12em;font-size:14px;color:var(--grn);text-shadow:0 0 10px var(--grn);margin-bottom:6px}
+  #fb.bad #fbHead{color:var(--red);text-shadow:0 0 10px var(--red)}
+  #fbText{font-size:14px;line-height:1.55;color:#d6e2f8}
+  #fbNext{margin-top:12px;font-size:13px;padding:10px 18px;border-color:var(--cyan);color:var(--cyan);background:#22f5ff12;
+          text-shadow:0 0 10px var(--cyan);box-shadow:0 0 14px #22f5ff55;animation:none}
+  #fbNext:hover{background:var(--cyan);color:#001a1c}
+  .qhelp{margin-top:10px;font-family:var(--mono);font-size:11px;letter-spacing:.1em;color:#6f80a8}
+
+  /* End */
+  #endCard{text-align:center}
+  #endCard.win{border-color:var(--grn);box-shadow:0 0 34px #39ff1466,inset 0 0 40px #39ff1410}
+  #endCard.lose{border-color:var(--red);box-shadow:0 0 34px #ff336666,inset 0 0 40px #ff336610}
+  #endTitle{font-family:var(--mono);font-size:clamp(20px,4vw,32px);letter-spacing:.1em}
+  .win #endTitle{color:var(--grn);text-shadow:0 0 12px var(--grn),0 0 30px var(--grn)}
+  .lose #endTitle{color:var(--red);text-shadow:0 0 12px var(--red),0 0 30px var(--red)}
+  #endPct{font-family:var(--mono);font-size:clamp(56px,13vw,104px);line-height:1.05;margin:8px 0;color:#fff}
+  .win #endPct{text-shadow:0 0 14px var(--grn),0 0 44px var(--grn)}
+  .lose #endPct{text-shadow:0 0 14px var(--red),0 0 44px var(--red)}
+  #endStats{font-family:var(--mono);font-size:13px;letter-spacing:.1em;color:var(--yel);margin-bottom:10px}
+  #endMsg{font-size:15px;line-height:1.55;color:#d6e2f8;margin:0 auto 12px;max-width:600px}
+  #endSkills{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin:10px 0 20px}
+  .chip{font-family:var(--mono);font-size:11.5px;padding:5px 10px;border-radius:20px;border:1px solid var(--red);color:#ffb3c6}
+  .chip.ok{border-color:var(--grn);color:#b9ffab}
+  @media (max-width:560px){.card{padding:18px 16px}.stat{min-width:64px}.stat b{font-size:16px}#pips{order:9;flex-basis:100%}}
+  @media (prefers-reduced-motion:reduce){h1,.btn{animation:none}}
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="game"></canvas>
+
+  <div id="hud" class="hidden">
+    <div class="stat"><small>ACIERTOS</small><b id="hCorrect">0/10</b></div>
+    <div class="stat"><small>META 80%</small><b id="hPct">0%</b></div>
+    <div class="stat" id="sScore"><small>PUNTAJE</small><b id="hScore">0</b></div>
+    <div class="stat" id="sStreak"><small>RACHA</small><b id="hStreak">x0</b></div>
+    <div id="pips"></div>
+    <div class="hbtn" id="bMute">SONIDO: ON (M)</div>
+    <div class="hbtn" id="bRestart">REINICIAR (R)</div>
+  </div>
+  <div id="hint"></div>
+
+  <!-- INICIO -->
+  <div class="overlay show" id="ovStart">
+    <div class="card">
+      <h1>CONVERSACIONES CRUCIALES<span>RETO DEL ENTRENADOR</span></h1>
+      <p class="lead">Eres profesional de Talento Humano y quieres demostrar que estás listo para entrenar a otros.
+        Recorre la arena, activa los <b>10 nodos</b> y resuelve cada escenario aplicando la metodología a situaciones reales de equipos.
+        Necesitas <b>al menos 80% de aciertos (8 de 10)</b> para ganar tu acreditación en este reto.</p>
+      <div class="ctrl">
+        <kbd>← ↑ ↓ →</kbd><span>Mueve tu avatar por la arena. En una pregunta, cambia de opción.</span>
+        <kbd>MOUSE</kbd><span>El avatar sigue al cursor. En una pregunta, apunta y haz clic para responder.</span>
+        <kbd>ENTER / ESPACIO</kbd><span>Confirma la opción resaltada y continúa.</span>
+        <kbd>1 – 4</kbd><span>Responde directo con el número de la opción.</span>
+        <kbd>R</kbd><span>Reinicio rápido en cualquier momento.</span>
+        <kbd>M</kbd><span>Activa o silencia el sonido.</span>
+      </div>
+      <div class="btn" id="bStart">INICIAR RETO ▶</div>
+      <p class="fine">Juego de práctica no oficial, inspirado en el libro <em>Crucial Conversations</em> (Grenny, Patterson, McMillan, Switzler, Gregory).
+        No sustituye ni otorga la certificación oficial de Crucial Learning.</p>
+    </div>
+  </div>
+
+  <!-- PREGUNTA -->
+  <div class="overlay" id="ovQ">
+    <div class="card" id="qCard">
+      <div class="qtop"><span id="qTag"></span><span id="qNum"></span></div>
+      <div id="tbar"><div id="tfill"></div></div>
+      <div id="qTitle"></div>
+      <p id="qSit"></p>
+      <p id="qAsk"></p>
+      <div id="qOpts"></div>
+      <div id="fb">
+        <div id="fbHead"></div>
+        <div id="fbText"></div>
+        <div class="btn" id="fbNext">CONTINUAR (ENTER)</div>
+      </div>
+      <div class="qhelp" id="qHelp">↑ ↓ ELEGIR · ENTER CONFIRMAR · 1-4 DIRECTO · O CLIC</div>
+    </div>
+  </div>
+
+  <!-- FINAL -->
+  <div class="overlay" id="ovEnd">
+    <div class="card" id="endCard">
+      <div id="endTitle"></div>
+      <div id="endPct"></div>
+      <div id="endStats"></div>
+      <p id="endMsg"></p>
+      <div id="endSkills"></div>
+      <div class="btn" id="bAgain">JUGAR DE NUEVO (R)</div>
+    </div>
+  </div>
+</div>
+<canvas id="fx"></canvas>
+
+<script>
+(function(){
+"use strict";
+
+/* ============================================================
+   ESCENARIOS  (la primera opción de cada lista es la correcta;
+   el juego las baraja al iniciar)
+   ============================================================ */
+var SCENARIOS = [
+ {skill:"Empieza por el corazón", title:"El comité que se calentó",
+  sit:"En pleno comité, la gerente de operaciones cuestiona delante de todos tu programa de liderazgo. Sientes el impulso de demostrarle que está equivocada.",
+  ask:"¿Qué haces primero?",
+  opts:["Me pregunto qué quiero de verdad para mí, para ella y para la relación, y actúo desde esa respuesta.",
+        "Respondo con datos contundentes para que quede claro, delante del comité, quién tiene la razón.",
+        "Guardo silencio para no empeorar las cosas y después le cuento lo ocurrido a mi jefe.",
+        "Cambio de tema con algo de humor para bajar la tensión y sigo con la agenda prevista."],
+  exp:"Empezar por el corazón es revisar tus motivos antes de abrir la boca. Cuando el objetivo pasa a ser ganar, castigar o quedar bien, el diálogo se acaba. La pregunta clave: ¿qué quiero realmente para mí, para el otro y para la relación?"},
+
+ {skill:"Rechaza el dilema del tonto", title:"Franqueza o relación",
+  sit:"Un líder te dice: «O soy honesto con Carla sobre su desempeño, o conservo la buena relación con ella. Las dos cosas no se pueden».",
+  ask:"Como entrenador, ¿qué le enseñas?",
+  opts:["A rechazar esa falsa disyuntiva y buscar el «y»: cómo ser totalmente franco y, a la vez, totalmente respetuoso.",
+        "A cuidar primero la relación: un equipo unido termina rindiendo más que uno que vive incómodo.",
+        "A elegir la franqueza sin rodeos: los resultados no pueden esperar a que todos se sientan bien.",
+        "A dejar esa conversación en manos de Talento Humano para que él no desgaste el vínculo con Carla."],
+  exp:"El «dilema del tonto» es creer que hay que escoger entre decir la verdad y conservar la relación. Las personas hábiles en diálogo se niegan a elegir y se preguntan cómo lograr ambas cosas."},
+
+ {skill:"Aprende a observar", title:"El taller en silencio",
+  sit:"Facilitas una sesión sobre la nueva política de turnos. Dos personas contestan con sarcasmo y el resto mira el celular sin decir nada.",
+  ask:"¿Qué estás viendo y qué haces?",
+  opts:["Señales de que la gente no se siente segura (sarcasmo y retirada son formas de silencio). Me detengo y restauro la seguridad antes de seguir con el contenido.",
+        "Falta de interés en el tema. Acelero la sesión y dejo las preguntas para el final, por correo.",
+        "Un acuerdo tácito: si nadie objeta abiertamente, la política quedó aceptada y puedo avanzar.",
+        "Un problema de disciplina. Recuerdo las normas del taller y pido guardar los celulares."],
+  exp:"Hay que mirar el contenido y también las condiciones de la conversación. El silencio (enmascarar, evadir, retirarse) y la violencia (controlar, etiquetar, atacar) indican que falta seguridad. Sin seguridad, nadie aporta al fondo de significado compartido."},
+
+ {skill:"Aprende a observar", title:"Tu estilo bajo presión",
+  sit:"Una analista te confiesa: «Cuando mi jefe sube la voz, le digo que sí a todo y después no hago lo que acordamos».",
+  ask:"¿Por dónde empiezas a entrenarla?",
+  opts:["La ayudo a reconocer su estilo bajo presión (se va al silencio) y a notar el momento en que la conversación se vuelve crucial.",
+        "Le recomiendo evitar las reuniones a solas con su jefe y dejar todos los acuerdos por correo.",
+        "Le sugiero responder con la misma firmeza de él para ganarse su respeto desde el principio.",
+        "Le señalo que el problema de fondo es el incumplimiento: si aceptó, debe cumplir lo acordado."],
+  exp:"Aprender a observar incluye observarse a uno mismo. Reconocer tu «estilo bajo estrés» y las señales tempranas (físicas, emocionales, de conducta) te permite volver al diálogo en lugar de caer en silencio o violencia."},
+
+ {skill:"Crea seguridad: propósito mutuo", title:"Ventas contra Finanzas",
+  sit:"Ventas y Finanzas discuten el esquema de comisiones. Cada área defiende su propuesta y ninguna cede. Te piden facilitar.",
+  ask:"¿Qué intervención eliges?",
+  opts:["Salir de las posiciones: preguntar qué busca cada área en el fondo, hasta dar con un propósito que ambas compartan, y desde ahí generar opciones nuevas.",
+        "Proponer un punto medio entre las dos cifras para cerrar rápido y que nadie salga perdiendo del todo.",
+        "Escalar el tema al gerente general para que decida él y se acabe la discusión entre las áreas.",
+        "Someter las dos propuestas a votación en la misma reunión y aplicar la que obtenga mayoría."],
+  exp:"Cuando hay propósitos cruzados, se trabaja el propósito mutuo: comprometerse a buscarlo, reconocer el propósito que hay detrás de cada estrategia, inventar un propósito común y luego hacer lluvia de ideas de nuevas estrategias. Ceder a medias no es diálogo."},
+
+ {skill:"Crea seguridad: contraste", title:"«O sea que soy mal jefe»",
+  sit:"Empiezas a hablar con un supervisor sobre sus retrasos en las evaluaciones de desempeño y te interrumpe: «O sea que soy un mal jefe».",
+  ask:"¿Qué herramienta usas?",
+  opts:["Contraste: «No quiero decir que seas un mal jefe; valoro cómo cuidas a tu equipo. Lo que sí quiero es que hablemos de las fechas de las evaluaciones».",
+        "Suavizar el mensaje: «No, tranquilo, no es tan grave. Era solo un comentario, olvídalo».",
+        "Insistir en la evidencia: «Yo no he dicho eso, pero los números hablan por sí solos».",
+        "Pedir disculpas por haber tocado el tema y reprogramar la conversación para otro día."],
+  exp:"El contraste corrige un malentendido sobre tu intención: primero aclaras lo que NO quieres decir y luego lo que SÍ. No es retractarse ni diluir el mensaje; es devolver la seguridad para poder seguir hablando del tema real."},
+
+ {skill:"Crea seguridad: respeto mutuo", title:"El tono cortante",
+  sit:"En una sesión interrumpiste a un colaborador con un tono cortante. Desde entonces no ha vuelto a participar.",
+  ask:"¿Qué haces?",
+  opts:["Le ofrezco una disculpa sincera por mi tono y retomo su punto para que lo termine.",
+        "Sigo adelante con la sesión; ya volverá a participar cuando se le pase la molestia.",
+        "Le explico que lo interrumpí por el tiempo, para que entienda que no fue nada personal.",
+        "Le pido delante del grupo que opine, para mostrarle que su punto de vista sí me importa."],
+  exp:"Cuando faltaste al respeto, lo que restaura la seguridad es una disculpa genuina. Justificarse o presionar a la persona en público no repara el respeto mutuo; solo confirma que no es seguro hablar."},
+
+ {skill:"Domina tus historias", title:"«No le importa el equipo»",
+  sit:"Una líder te dice: «Jorge llegó tarde tres veces este mes. Es claro que no le importa el equipo».",
+  ask:"¿Qué le ayudas a hacer antes de hablar con Jorge?",
+  opts:["Separar el hecho (tres llegadas tarde) de la historia («no le importa») y preguntarse por qué una persona razonable y decente haría eso.",
+        "Documentar cada retraso con fecha y hora, para tener el respaldo listo si hay que sancionar.",
+        "Confiar en su lectura: los líderes con experiencia rara vez se equivocan al evaluar a su gente.",
+        "Desahogarse antes con otro colega de confianza, para llegar más tranquila a la conversación."],
+  exp:"Entre lo que vemos y lo que sentimos hay una historia que nos contamos. Dominar tus historias es volver a los hechos y cuestionar la interpretación: ¿por qué una persona razonable, racional y decente haría esto?"},
+
+ {skill:"Domina tus historias", title:"«Ya lo intenté todo»",
+  sit:"Un coordinador te dice sobre un conflicto con otra área: «Ya lo intenté todo. No hay absolutamente nada que yo pueda hacer».",
+  ask:"¿Qué tipo de historia es y qué pregunta le haces?",
+  opts:["Historia de indefensión. Le pregunto: «¿Qué harías ahora mismo si de verdad quisieras lograr esos resultados?»",
+        "Historia de villano. Le pregunto: «¿Quién es el responsable de que las cosas hayan llegado hasta aquí?»",
+        "Ninguna historia: es una lectura realista. Le aconsejo elegir sus batallas y soltar esta.",
+        "Historia de víctima. Le pregunto: «¿A quién más le ha pasado lo mismo con esa área?»"],
+  exp:"Las tres historias ingeniosas son víctima («no es mi culpa»), villano («todo es culpa suya») e indefensión («no puedo hacer nada»). El antídoto de la indefensión es preguntarse qué haría uno ya mismo si realmente quisiera esos resultados."},
+
+ {skill:"Define tu camino (STATE)", title:"La rotación más alta",
+  sit:"Debes hablar con un gerente cuyo equipo tiene la rotación más alta de la empresa. Tú sospechas de su estilo de liderazgo.",
+  ask:"¿Cómo abres la conversación?",
+  opts:["Con los hechos («en seis meses salieron 5 de 12 personas»), luego mi interpretación como hipótesis, y le pregunto cómo lo ve él.",
+        "Con la conclusión, para no perder tiempo: «Tu estilo de liderazgo está espantando a la gente».",
+        "Con una pregunta abierta: «¿Cómo crees que te ve tu equipo?», para que llegue solo a la conclusión.",
+        "Con varios elogios, la crítica en la mitad y otro elogio al final para que no se sienta atacado."],
+  exp:"STATE: comparte tus hechos, cuenta tu historia, pregunta por el camino del otro, habla de forma tentativa y anima a que te contradigan. Los hechos son lo menos polémico y lo más persuasivo; por eso van primero. Las preguntas con trampa y el «sándwich» esconden tu mensaje."},
+
+ {skill:"Define tu camino (STATE)", title:"Tentativo no es tibio",
+  sit:"Una líder planea decirle a un analista: «Eres desorganizado e irresponsable con los entregables».",
+  ask:"¿Qué reformulación le propones?",
+  opts:["«Los tres últimos informes llegaron después de la fecha. Empiezo a pensar que la carga te está desbordando. ¿Cómo lo ves tú?»",
+        "«No sé, tal vez, puede que a veces haya algún retrasito, pero seguro la equivocada soy yo».",
+        "«Con todo respeto y sin ánimo de ofender, la verdad es que eres bastante desorganizado».",
+        "«No lo digo solo yo: todo el equipo opina que eres desorganizado con los entregables»."],
+  exp:"Hablar tentativamente es presentar tu conclusión como una historia, no como un hecho, y con la confianza suficiente para decirla. No es disfrazar una etiqueta con cortesía, ni diluirla tanto que desaparezca, ni esconderse detrás de «todos opinan»."},
+
+ {skill:"Explora el camino del otro", title:"«Todo bien»",
+  sit:"Le comunicas un cambio a una colaboradora. Responde «todo bien», con los brazos cruzados y la voz tensa.",
+  ask:"¿Cómo sigues?",
+  opts:["Reflejo lo que observo: «Dices que todo está bien, pero por tu tono me parece que algo te incomoda. De verdad me interesa saberlo».",
+        "Tomo su palabra y cierro la reunión: si dice que todo está bien, no me corresponde insistir.",
+        "Le hago notar que esa actitud no ayuda y que espero más apertura frente a los cambios.",
+        "Le aseguro que no hay motivo para molestarse y le explico otra vez las razones del cambio."],
+  exp:"Para explorar el camino del otro se usan cuatro habilidades de escucha: preguntar, reflejar (nombrar con respeto la diferencia entre lo que dice y lo que muestra), parafrasear y, si hace falta, aventurar una hipótesis. La curiosidad genuina invita a salir del silencio."},
+
+ {skill:"Pasa a la acción", title:"«Quedamos en mejorar»",
+  sit:"Una reunión difícil termina con muy buen diálogo y un acuerdo: «quedamos en mejorar la comunicación entre las áreas».",
+  ask:"¿Qué falta?",
+  opts:["Concretar quién hace qué, para cuándo y cómo se hará el seguimiento, y dejarlo documentado.",
+        "Nada: después de un diálogo así de bueno, lo que toca es confiar en el compromiso del grupo.",
+        "Agendar otra reunión el próximo mes para seguir conversando sobre cómo va la comunicación.",
+        "Pedir que cada persona reflexione por su cuenta y envíe después sus ideas por correo."],
+  exp:"Un buen diálogo no garantiza resultados. Pasar a la acción exige definir quién hace qué y para cuándo, y acordar el seguimiento. Los compromisos vagos producen expectativas defraudadas y nuevas conversaciones cruciales."},
+
+ {skill:"Pasa a la acción", title:"La consulta que no era consulta",
+  sit:"Un líder pidió opiniones sobre el trabajo híbrido, pero ya tenía la decisión tomada. Al anunciarla, el equipo se sintió engañado.",
+  ask:"¿Qué práctica le enseñas?",
+  opts:["Aclarar desde el inicio cómo se va a decidir (mandato, consulta, voto o consenso): dialogar no es lo mismo que decidir.",
+        "Buscar siempre el consenso total, para que nadie pueda sentirse excluido de las decisiones.",
+        "No pedir opiniones cuando la decisión le corresponde al líder: así se evitan falsas expectativas.",
+        "Someter a votación todas las decisiones que afecten al equipo, por transparencia."],
+  exp:"«Decidir cómo decidir» evita expectativas defraudadas. Hay cuatro métodos: mandato, consulta, voto y consenso. Ninguno es siempre el mejor; lo importante es elegirlo a conciencia y decirlo con claridad antes de pedir aportes."},
+
+ {skill:"Elige el tema", title:"La cuarta vez",
+  sit:"Es la cuarta vez que un colaborador incumple una fecha pese a los acuerdos previos. Su líder quiere hablarle, otra vez, del último retraso.",
+  ask:"¿Qué tema debería abordar?",
+  opts:["El patrón: ya no se trata del último retraso, sino de que se repite a pesar de lo acordado.",
+        "El contenido: el retraso más reciente, que es lo concreto, lo fresco y lo que se puede probar.",
+        "Todos los pendientes acumulados de una sola vez, para aprovechar y no tener que repetir la reunión.",
+        "Ninguno: después de cuatro veces ya no hay nada que conversar, corresponde el proceso disciplinario."],
+  exp:"Antes de hablar hay que elegir el tema correcto: contenido (un hecho puntual), patrón (se repite) o relación (afecta la confianza). Si el problema ya es un patrón y sigues hablando del contenido, tendrás la misma conversación una y otra vez."},
+
+ {skill:"Cultura de diálogo", title:"El taller milagroso",
+  sit:"La gerencia general te pide: «Organiza un taller de dos horas para que la gente por fin se hable de frente».",
+  ask:"¿Qué propones para que el cambio sea real?",
+  opts:["Que los líderes modelen las habilidades, practicarlas con casos reales del negocio y medir conductas en el tiempo: un taller único no cambia la cultura.",
+        "Aceptar el taller tal como lo piden: lo importante es empezar y el resto se irá dando con el tiempo.",
+        "Regalar el libro a toda la organización con una carta de la gerencia invitando a aplicarlo.",
+        "Incluir «hablar de frente» en la evaluación de desempeño y penalizar a quien no lo cumpla."],
+  exp:"Una cultura de diálogo se construye cuando las habilidades se practican de forma deliberada, los líderes dan ejemplo (sobre todo cuando reciben malas noticias) y se hace seguimiento. La gente observa si de verdad es seguro hablar; la coerción produce más silencio."}
+];
+
+var TOTAL = 10, PASS = 0.8, Q_TIME = 45;
+
+/* ============================================================
+   UTILIDADES
+   ============================================================ */
+function $(id){return document.getElementById(id);}
+function rnd(a,b){return a+Math.random()*(b-a);}
+function shuffle(a){for(var i=a.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1));var t=a[i];a[i]=a[j];a[j]=t;}return a;}
+function clamp(v,a,b){return v<a?a:(v>b?b:v);}
+var reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/* ============================================================
+   AUDIO (Web Audio, todo sintetizado)
+   ============================================================ */
+var AC=null, master=null, muted=false;
+function audioInit(){
+  if(AC){ if(AC.state==="suspended") AC.resume(); return; }
+  try{
+    var C = window.AudioContext||window.webkitAudioContext; if(!C) return;
+    AC = new C(); master = AC.createGain(); master.gain.value = muted?0:0.5; master.connect(AC.destination);
+  }catch(e){AC=null;}
+}
+function tone(freq,delay,dur,type,vol,slideTo){
+  if(!AC) return;
+  var t=AC.currentTime+(delay||0), o=AC.createOscillator(), g=AC.createGain();
+  o.type=type||"sine"; o.frequency.setValueAtTime(freq,t);
+  if(slideTo) o.frequency.exponentialRampToValueAtTime(slideTo,t+dur);
+  g.gain.setValueAtTime(0.0001,t);
+  g.gain.exponentialRampToValueAtTime(vol||0.2,t+0.012);
+  g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+  o.connect(g); g.connect(master); o.start(t); o.stop(t+dur+0.03);
+}
+function noise(delay,dur,vol){
+  if(!AC) return;
+  var n=Math.floor(AC.sampleRate*dur), buf=AC.createBuffer(1,n,AC.sampleRate), d=buf.getChannelData(0);
+  for(var i=0;i<n;i++) d[i]=(Math.random()*2-1)*(1-i/n);
+  var s=AC.createBufferSource(), g=AC.createGain(), f=AC.createBiquadFilter();
+  f.type="lowpass"; f.frequency.value=900; g.gain.value=vol||0.25;
+  s.buffer=buf; s.connect(f); f.connect(g); g.connect(master); s.start(AC.currentTime+(delay||0));
+}
+var SFX={
+  tick:function(){tone(880,0,.05,"square",.06);},
+  start:function(){[262,330,392,523].forEach(function(f,i){tone(f,i*.07,.18,"triangle",.18);});},
+  open:function(){tone(300,0,.22,"sawtooth",.1,900);tone(600,.05,.25,"sine",.14,1400);},
+  good:function(){[523,659,784,1047].forEach(function(f,i){tone(f,i*.075,.22,"triangle",.2);});tone(2093,.3,.3,"sine",.08);},
+  bad:function(){tone(220,0,.35,"sawtooth",.2,70);tone(233,0,.35,"square",.1,65);noise(0,.3,.3);},
+  next:function(){tone(660,0,.08,"sine",.12);tone(990,.06,.1,"sine",.1);},
+  win:function(){[523,659,784,1047,784,1047,1319].forEach(function(f,i){tone(f,i*.11,.3,"triangle",.2);tone(f/2,i*.11,.3,"sine",.12);});},
+  lose:function(){[392,349,311,262,196].forEach(function(f,i){tone(f,i*.16,.34,"sawtooth",.13);});}
+};
+function toggleMute(){
+  muted=!muted; if(master) master.gain.value=muted?0:0.5;
+  $("bMute").textContent="SONIDO: "+(muted?"OFF":"ON")+" (M)";
+}
+
+/* ============================================================
+   LIENZOS
+   ============================================================ */
+var game=$("game"), fxC=$("fx"), g=game.getContext("2d"), f=fxC.getContext("2d");
+var W=0,H=0,dpr=1;
+function bounds(){return {x0:46,y0:(W<620?150:108),x1:W-46,y1:H-60};}
+function resize(){
+  dpr=Math.min(window.devicePixelRatio||1,2); W=window.innerWidth; H=window.innerHeight;
+  [game,fxC].forEach(function(c){c.width=Math.round(W*dpr);c.height=Math.round(H*dpr);});
+  g.setTransform(dpr,0,0,dpr,0,0); f.setTransform(dpr,0,0,dpr,0,0);
+  nodes.forEach(placeNode);
+  var b=bounds();
+  player.x=clamp(player.x,b.x0,b.x1); player.y=clamp(player.y,b.y0,b.y1);
+  target.x=clamp(target.x,b.x0,b.x1); target.y=clamp(target.y,b.y0,b.y1);
+}
+function placeNode(n){var b=bounds(); n.x=b.x0+n.u*(b.x1-b.x0); n.y=b.y0+n.v*(b.y1-b.y0);}
+
+/* ============================================================
+   ESTADO
+   ============================================================ */
+var state="start";           // start | play | question | feedback | end
+var nodes=[], particles=[], rings=[], stars=[];
+var player={x:0,y:0,r:13,trail:[]}, target={x:0,y:0};
+var keys={}, score=0, streak=0, bestStreak=0, answered=0, correct=0;
+var cur=null, sel=0, qStart=0, shake=0, time=0, confetti=0, results=[];
+var HUES=[185,310,55,270,140];
+
+for(var i=0;i<90;i++) stars.push({x:Math.random(),y:Math.random(),s:rnd(.4,1.6),p:rnd(0,6.28)});
+
+function startGame(){
+  audioInit(); SFX.start();
+  var picks=shuffle(SCENARIOS.slice()).slice(0,TOTAL);
+  var b=bounds(), bw=b.x1-b.x0, bh=b.y1-b.y0;
+  nodes=[]; results=[];
+  var minD=Math.min(bw,bh)*0.3;
+  picks.forEach(function(sc,idx){
+    var order=shuffle([0,1,2,3]);
+    var q={skill:sc.skill,title:sc.title,sit:sc.sit,ask:sc.ask,exp:sc.exp,
+           opts:order.map(function(k){return sc.opts[k];}),answer:order.indexOf(0)};
+    var u,v,ok,tries=0,d=minD;
+    do{
+      u=Math.random(); v=Math.random(); ok=true; tries++;
+      if(tries%40===0) d*=0.88;
+      var px=u*bw, py=v*bh;
+      if(Math.hypot(px-bw/2,py-bh/2)<Math.min(d,110)) ok=false;
+      for(var j=0;j<nodes.length&&ok;j++){
+        if(Math.hypot(px-nodes[j].u*bw,py-nodes[j].v*bh)<d) ok=false;
+      }
+    }while(!ok&&tries<2000);
+    var n={u:u,v:v,x:0,y:0,q:q,num:idx+1,st:"open",ph:rnd(0,6.28),hue:HUES[idx%HUES.length],pop:0,spawn:-idx*0.07};
+    placeNode(n); nodes.push(n);
+  });
+  player.x=target.x=(b.x0+b.x1)/2; player.y=target.y=(b.y0+b.y1)/2; player.trail=[];
+  score=0;streak=0;bestStreak=0;answered=0;correct=0;cur=null;keys={};confetti=0;particles=[];rings=[];
+  var p=$("pips"); p.innerHTML="";
+  for(var k=0;k<TOTAL;k++){var s=document.createElement("div");s.className="pip";p.appendChild(s);}
+  show("ovStart",false);show("ovQ",false);show("ovEnd",false);
+  $("hud").classList.remove("hidden");
+  $("hint").textContent="MUÉVETE CON FLECHAS O MOUSE HACIA UN NODO";
+  updateHUD(); state="play";
+  burst(player.x,player.y,"#22f5ff",40,260); ring(player.x,player.y,"#22f5ff");
+}
+function show(id,on){$(id).classList.toggle("show",!!on);}
+function updateHUD(){
+  $("hCorrect").textContent=correct+"/"+TOTAL;
+  $("hPct").textContent=Math.round(correct/TOTAL*100)+"%";
+  $("hScore").textContent=score;
+  $("hStreak").textContent="x"+streak;
+}
+
+/* ============================================================
+   PREGUNTAS
+   ============================================================ */
+function openQuestion(n){
+  state="question"; cur=n; sel=0; keys={}; SFX.open();
+  ring(n.x,n.y,"hsl("+n.hue+",100%,60%)"); burst(n.x,n.y,"hsl("+n.hue+",100%,65%)",26,220);
+  var q=n.q;
+  $("qTag").textContent=q.skill.toUpperCase();
+  $("qNum").textContent="ESCENARIO "+(answered+1)+" / "+TOTAL;
+  $("qTitle").textContent=q.title;
+  $("qSit").textContent=q.sit;
+  $("qAsk").textContent=q.ask;
+  var box=$("qOpts"); box.innerHTML=""; box.classList.remove("locked");
+  q.opts.forEach(function(t,i){
+    var d=document.createElement("div"); d.className="opt"+(i===0?" sel":"");
+    var k=document.createElement("i"); k.textContent=(i+1);
+    var s=document.createElement("span"); s.textContent=t;
+    d.appendChild(k); d.appendChild(s);
+    d.addEventListener("mouseenter",function(){ if(state==="question") setSel(i); });
+    d.addEventListener("click",function(){ if(state==="question"){ setSel(i,true); answer(i); } });
+    box.appendChild(d);
+  });
+  $("fb").className=""; $("qHelp").style.display="";
+  $("qCard").scrollTop=0;
+  show("ovQ",true); $("hint").textContent="";
+  qStart=performance.now();
+}
+function setSel(i,silent){
+  if(i===sel) return; sel=i; if(!silent) SFX.tick();
+  var o=$("qOpts").children; for(var k=0;k<o.length;k++) o[k].classList.toggle("sel",k===i);
+}
+function answer(i){
+  if(state!=="question"||!cur) return;
+  state="feedback";
+  var q=cur.q, ok=(i===q.answer), box=$("qOpts"), o=box.children;
+  box.classList.add("locked");
+  for(var k=0;k<o.length;k++) o[k].classList.remove("sel");
+  o[q.answer].classList.add("right");
+  if(!ok) o[i].classList.add("wrong");
+  var r=o[i].getBoundingClientRect(), cx=r.left+r.width/2, cy=r.top+r.height/2;
+  answered++; var gained=0;
+  if(ok){
+    correct++; streak++; if(streak>bestStreak) bestStreak=streak;
+    var left=clamp(1-(performance.now()-qStart)/1000/Q_TIME,0,1);
+    var mult=Math.min(1+0.1*(streak-1),1.5);
+    gained=Math.round((100+50*left)*mult); score+=gained;
+    cur.st="ok"; SFX.good();
+    burst(cx,cy,"#39ff14",70,420); burst(cx,cy,"#ffe94a",30,300); ring(cx,cy,"#39ff14");
+    shake=Math.max(shake,5);
+  }else{
+    streak=0; cur.st="bad"; SFX.bad();
+    burst(cx,cy,"#ff3366",50,360); ring(cx,cy,"#ff3366");
+    shake=Math.max(shake,22);
+  }
+  cur.pop=1; results.push({skill:q.skill,ok:ok});
+  $("pips").children[answered-1].classList.add(ok?"ok":"bad");
+  updateHUD();
+  $("fbHead").textContent= ok ? ("✔ CORRECTO  +"+gained+" PTS"+(streak>1?"  ·  RACHA x"+streak:"")) : "✖ NO ES LA MEJOR OPCIÓN";
+  $("fbText").textContent=q.exp;
+  $("fbNext").textContent=(answered>=TOTAL?"VER RESULTADO":"CONTINUAR")+" (ENTER)";
+  $("fb").className="show"+(ok?"":" bad");
+  $("qHelp").style.display="none";
+  setTimeout(function(){ var c=$("qCard"); c.scrollTo ? c.scrollTo({top:c.scrollHeight,behavior:"smooth"}) : (c.scrollTop=c.scrollHeight); },60);
+}
+function nextStep(){
+  if(state!=="feedback") return;
+  SFX.next(); show("ovQ",false); cur=null; keys={};
+  target.x=player.x; target.y=player.y;
+  if(answered>=TOTAL){ finish(); }
+  else{ state="play"; $("hint").textContent="QUEDAN "+(TOTAL-answered)+" NODOS · NECESITAS "+Math.ceil(TOTAL*PASS)+" ACIERTOS"; }
+}
+function finish(){
+  state="end";
+  var pct=correct/TOTAL, win=pct>=PASS-1e-9;
+  $("endCard").className="card "+(win?"win":"lose");
+  $("endTitle").textContent= win ? "¡RETO SUPERADO!" : "AÚN NO ALCANZAS EL 80%";
+  $("endPct").textContent=Math.round(pct*100)+"%";
+  $("endStats").textContent=correct+" DE "+TOTAL+" ESCENARIOS · PUNTAJE "+score+" · MEJOR RACHA x"+bestStreak;
+  $("endMsg").textContent= win
+    ? "Demostraste criterio para aplicar la metodología en situaciones reales. Estás listo para dar el siguiente paso hacia tu preparación como entrenador de conversaciones cruciales."
+    : "Necesitabas "+Math.ceil(TOTAL*PASS)+" aciertos. Repasa las habilidades marcadas en rojo y vuelve a intentarlo: cada partida trae escenarios y orden distintos.";
+  var box=$("endSkills"); box.innerHTML="";
+  results.forEach(function(r){var c=document.createElement("span");c.className="chip"+(r.ok?" ok":"");c.textContent=(r.ok?"✔ ":"✖ ")+r.skill;box.appendChild(c);});
+  $("hint").textContent="";
+  show("ovEnd",true);
+  if(win){ SFX.win(); confetti=3.2; shake=10; } else { SFX.lose(); shake=26; burst(W/2,H/2,"#ff3366",80,460); }
+}
+
+/* ============================================================
+   PARTÍCULAS
+   ============================================================ */
+function burst(x,y,color,n,speed){
+  if(reduceMotion) n=Math.ceil(n/4);
+  for(var i=0;i<n;i++){
+    var a=Math.random()*6.283, s=rnd(.15,1)*speed;
+    particles.push({x:x,y:y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:rnd(.5,1.2),max:1.2,c:color,r:rnd(1.2,3.6),gr:120});
+  }
+  if(particles.length>900) particles.splice(0,particles.length-900);
+}
+function ring(x,y,color){rings.push({x:x,y:y,r:8,life:.6,c:color});}
+
+/* ============================================================
+   ENTRADAS
+   ============================================================ */
+window.addEventListener("keydown",function(e){
+  var k=e.key, lk=k.length===1?k.toLowerCase():k;
+  if(["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"," ","Enter"].indexOf(k)>=0) e.preventDefault();
+  if(e.ctrlKey||e.metaKey||e.altKey) return;
+  audioInit();
+  var go=(k==="Enter"||k===" ");
+  if(go&&e.repeat) return;
+  if(lk==="m"){ if(!e.repeat) toggleMute(); return; }
+  if(lk==="r"){ if(!e.repeat) startGame(); return; }
+  if(state==="start"||state==="end"){ if(go) startGame(); return; }
+  if(state==="question"){
+    if(k==="ArrowUp"||k==="ArrowLeft") setSel((sel+3)%4);
+    else if(k==="ArrowDown"||k==="ArrowRight") setSel((sel+1)%4);
+    else if(go) answer(sel);
+    else if(k>="1"&&k<="4"&&!e.repeat){ var i=parseInt(k,10)-1; setSel(i,true); answer(i); }
+    return;
+  }
+  if(state==="feedback"){ if(go) nextStep(); return; }
+  keys[lk]=true;
+});
+window.addEventListener("keyup",function(e){var k=e.key;keys[k.length===1?k.toLowerCase():k]=false;});
+window.addEventListener("blur",function(){keys={};});
+function pointerTo(e){ if(state!=="play") return; var b=bounds(); target.x=clamp(e.clientX,b.x0,b.x1); target.y=clamp(e.clientY,b.y0,b.y1); }
+game.addEventListener("pointermove",pointerTo);
+game.addEventListener("pointerdown",function(e){audioInit();pointerTo(e); if(state==="play") ring(target.x,target.y,"#ff2bd6");});
+$("bStart").addEventListener("click",startGame);
+$("bAgain").addEventListener("click",startGame);
+$("bRestart").addEventListener("click",startGame);
+$("bMute").addEventListener("click",function(){audioInit();toggleMute();});
+$("fbNext").addEventListener("click",nextStep);
+window.addEventListener("resize",resize);
+
+/* ============================================================
+   BUCLE
+   ============================================================ */
+function update(dt){
+  time+=dt;
+  if(state==="play"){
+    var dx=0,dy=0;
+    if(keys.ArrowLeft||keys.a) dx-=1; if(keys.ArrowRight||keys.d) dx+=1;
+    if(keys.ArrowUp||keys.w) dy-=1;   if(keys.ArrowDown||keys.s) dy+=1;
+    if(dx||dy){
+      var l=Math.hypot(dx,dy), b=bounds(), lead=150;
+      // el objetivo va por delante del avatar; el avatar lo alcanza con easing
+      target.x=clamp(target.x+dx/l*520*dt,Math.max(b.x0,player.x-lead),Math.min(b.x1,player.x+lead));
+      target.y=clamp(target.y+dy/l*520*dt,Math.max(b.y0,player.y-lead),Math.min(b.y1,player.y+lead));
+    }
+    var e=1-Math.exp(-dt*6.5);           // easing exponencial
+    var ox=player.x, oy=player.y;
+    player.x+=(target.x-player.x)*e; player.y+=(target.y-player.y)*e;
+    var sp=Math.hypot(player.x-ox,player.y-oy)/Math.max(dt,.001);
+    player.trail.push({x:player.x,y:player.y}); if(player.trail.length>22) player.trail.shift();
+    if(sp>90&&Math.random()<.5) particles.push({x:player.x+rnd(-5,5),y:player.y+rnd(-5,5),vx:rnd(-20,20),vy:rnd(-20,20),life:.45,max:.45,c:"#22f5ff",r:rnd(1,2.2),gr:0});
+    for(var i=0;i<nodes.length;i++){
+      var n=nodes[i];
+      if(n.st==="open"&&n.spawn>=1&&Math.hypot(n.x-player.x,n.y-player.y)<player.r+24){ openQuestion(n); break; }
+    }
+  }
+  if(state==="question"){
+    var left=clamp(1-(performance.now()-qStart)/1000/Q_TIME,0,1);
+    $("tfill").style.width=(left*100)+"%";
+  }
+  nodes.forEach(function(n){ if(n.spawn<1) n.spawn=Math.min(1,n.spawn+dt*2.2); if(n.pop>0) n.pop=Math.max(0,n.pop-dt*2); });
+  for(var p=particles.length-1;p>=0;p--){
+    var q=particles[p]; q.life-=dt; if(q.life<=0){particles.splice(p,1);continue;}
+    q.vx*=(1-2.2*dt); q.vy=q.vy*(1-2.2*dt)+q.gr*dt; q.x+=q.vx*dt; q.y+=q.vy*dt;
+  }
+  for(var r=rings.length-1;r>=0;r--){ var rg=rings[r]; rg.life-=dt; rg.r+=dt*260; if(rg.life<=0) rings.splice(r,1); }
+  if(confetti>0){
+    confetti-=dt;
+    if(Math.random()<.5){ var cs=["#39ff14","#22f5ff","#ff2bd6","#ffe94a"]; burst(rnd(W*.1,W*.9),rnd(H*.1,H*.5),cs[Math.floor(Math.random()*4)],22,320); }
+  }
+  // screen shake
+  if(shake>0.4){
+    var m=reduceMotion?shake*.15:shake;
+    $("stage").style.transform="translate("+rnd(-m,m).toFixed(1)+"px,"+rnd(-m,m).toFixed(1)+"px)";
+    shake*=Math.exp(-dt*7);
+  }else if(shake!==0){ shake=0; $("stage").style.transform=""; }
+}
+
+function easeOutBack(t){var c=1.70158;t=clamp(t,0,1);return 1+(c+1)*Math.pow(t-1,3)+c*Math.pow(t-1,2);}
+
+function draw(){
+  g.clearRect(0,0,W,H);
+  // fondo
+  var bg=g.createRadialGradient(W/2,H/2,0,W/2,H/2,Math.max(W,H)*.7);
+  bg.addColorStop(0,"#120636"); bg.addColorStop(1,"#05010f");
+  g.fillStyle=bg; g.fillRect(0,0,W,H);
+  // estrellas
+  for(var i=0;i<stars.length;i++){var s=stars[i]; g.globalAlpha=.25+.35*Math.sin(time*1.5+s.p); g.fillStyle="#9fd8ff"; g.fillRect(s.x*W,s.y*H,s.s,s.s);}
+  g.globalAlpha=1;
+  // rejilla neón
+  var gs=56, off=(time*14)%gs;
+  g.lineWidth=1; g.strokeStyle="rgba(140,70,255,.16)"; g.beginPath();
+  for(var x=-gs+off;x<W+gs;x+=gs){g.moveTo(x,0);g.lineTo(x,H);}
+  for(var y=-gs+off;y<H+gs;y+=gs){g.moveTo(0,y);g.lineTo(W,y);}
+  g.stroke();
+
+  if(state==="start"){ return; }
+
+  // guía al nodo abierto más cercano
+  var near=null,nd=1e9;
+  nodes.forEach(function(n){ if(n.st==="open"){var d=Math.hypot(n.x-player.x,n.y-player.y); if(d<nd){nd=d;near=n;}} });
+  if(near&&state==="play"){
+    g.save(); g.setLineDash([4,10]); g.lineDashOffset=-time*40; g.strokeStyle="rgba(34,245,255,.28)"; g.lineWidth=1.5;
+    g.beginPath(); g.moveTo(player.x,player.y); g.lineTo(near.x,near.y); g.stroke(); g.restore();
+  }
+
+  // nodos
+  g.textAlign="center"; g.textBaseline="middle";
+  nodes.forEach(function(n){
+    var sc=easeOutBack(Math.max(0,n.spawn)); if(sc<=0) return;
+    var bob=Math.sin(time*2+n.ph)*5, y=n.y+bob, R=(22+Math.sin(time*3+n.ph)*2+n.pop*14)*sc;
+    var col= n.st==="ok" ? "#39ff14" : n.st==="bad" ? "#ff3366" : "hsl("+n.hue+",100%,62%)";
+    g.save();
+    g.globalAlpha= n.st==="open"?1:.55;
+    g.shadowColor=col; g.shadowBlur= n.st==="open"?26:12;
+    g.strokeStyle=col; g.lineWidth=2.5; g.fillStyle="rgba(8,4,30,.85)";
+    g.beginPath(); g.arc(n.x,y,R,0,6.283); g.fill(); g.stroke();
+    if(n.st==="open"){
+      g.lineWidth=1.5; g.globalAlpha=.6;
+      g.beginPath(); g.arc(n.x,y,R+8,time*1.6+n.ph,time*1.6+n.ph+2.2); g.stroke();
+      g.beginPath(); g.arc(n.x,y,R+8,time*1.6+n.ph+3.14,time*1.6+n.ph+5.34); g.stroke();
+      g.globalAlpha=1;
+    }
+    g.fillStyle=col; g.font="bold "+Math.round(17*sc)+"px Consolas,monospace";
+    g.fillText(n.st==="ok"?"✔":n.st==="bad"?"✖":"?",n.x,y+1);
+    g.restore();
+    var d=Math.hypot(n.x-player.x,n.y-player.y);
+    if(n.st!=="open"||d<170){
+      g.save(); g.globalAlpha= n.st==="open"?clamp((170-d)/70,0,1):.6;
+      g.font="11px Consolas,monospace"; g.fillStyle=col; g.shadowColor=col; g.shadowBlur=8;
+      g.fillText(n.q.skill.toUpperCase(),clamp(n.x,110,W-110),y+R+18); g.restore();
+    }
+  });
+
+  // retícula del objetivo
+  if(state==="play"&&Math.hypot(target.x-player.x,target.y-player.y)>18){
+    g.save(); g.strokeStyle="rgba(255,43,214,.7)"; g.lineWidth=1.5; g.translate(target.x,target.y); g.rotate(time*2);
+    g.beginPath(); g.arc(0,0,9,0,6.283); g.moveTo(-14,0);g.lineTo(-5,0);g.moveTo(5,0);g.lineTo(14,0);g.moveTo(0,-14);g.lineTo(0,-5);g.moveTo(0,5);g.lineTo(0,14); g.stroke(); g.restore();
+  }
+
+  // estela y avatar
+  g.save(); g.globalCompositeOperation="lighter";
+  for(var t=0;t<player.trail.length;t++){
+    var p=player.trail[t], a=t/player.trail.length;
+    g.globalAlpha=a*.35; g.fillStyle="#22f5ff"; g.beginPath(); g.arc(p.x,p.y,player.r*a*.9,0,6.283); g.fill();
+  }
+  g.globalAlpha=1; g.shadowColor="#22f5ff"; g.shadowBlur=28; g.fillStyle="#22f5ff";
+  g.beginPath(); g.arc(player.x,player.y,player.r,0,6.283); g.fill();
+  g.shadowBlur=0; g.fillStyle="#fff"; g.beginPath(); g.arc(player.x,player.y,player.r*.5,0,6.283); g.fill();
+  g.strokeStyle="#ff2bd6"; g.lineWidth=2; g.shadowColor="#ff2bd6"; g.shadowBlur=14;
+  g.beginPath(); g.arc(player.x,player.y,player.r+7,time*4,time*4+1.8); g.stroke();
+  g.beginPath(); g.arc(player.x,player.y,player.r+7,time*4+3.14,time*4+4.94); g.stroke();
+  g.restore();
+}
+
+function drawFx(){
+  f.clearRect(0,0,W,H);
+  f.save(); f.globalCompositeOperation="lighter";
+  for(var i=0;i<particles.length;i++){
+    var p=particles[i], a=clamp(p.life/p.max,0,1);
+    f.globalAlpha=a; f.fillStyle=p.c; f.beginPath(); f.arc(p.x,p.y,p.r*(.4+a*.6),0,6.283); f.fill();
+  }
+  for(var r=0;r<rings.length;r++){
+    var rg=rings[r]; f.globalAlpha=clamp(rg.life/.6,0,1); f.strokeStyle=rg.c; f.lineWidth=3;
+    f.beginPath(); f.arc(rg.x,rg.y,rg.r,0,6.283); f.stroke();
+  }
+  f.restore();
+}
+
+var last=performance.now();
+function loop(now){
+  var dt=Math.min((now-last)/1000,.05); last=now;
+  update(dt); draw(); drawFx();
+  requestAnimationFrame(loop);
+}
+resize();
+requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
